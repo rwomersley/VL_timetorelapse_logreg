@@ -1,5 +1,5 @@
 ---
-title: "logreg_longer"
+title: "Logistic Regression for predicting "Time to Relapse" for Visceral Leishmaniasis individuals
 author: "rwomersley"
 date: "03/11/2021"
 output: html_document
@@ -19,8 +19,8 @@ library("pROC")
 
 
 #load in data
-setwd("/Volumes/Seagate Expansi/LEISHMANIASIS/Sanger data") # set working directory
-Scores <- read_excel("raw_values_leish.xlsx", sheet = "Score", skip = 1)
+setwd("") # set working directory - input your working directory here
+Scores <- read_excel("Raw_Values_LogReg_Visceral_Leishmaniasis.xlsx", sheet = "Score", skip = 1)
 
 #--------------------------------------------------------------------------------
 #data cleaning and preprocessing
