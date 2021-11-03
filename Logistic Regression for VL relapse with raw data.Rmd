@@ -1,0 +1,166 @@
+---
+title: "logreg_longer"
+author: "rwomersley"
+date: "03/11/2021"
+output: html_document
+---
+# Logistic Regression for Prediction of Relapse in Visceral Leishmaniasis
+### Code used for performing a logistic regression to predict the time to relapse for patients with VL, based on levels of CD4 cells, PD1 and IFNg expression.
+
+## Part 1
+### Multinomial Logistic Regression to predict 'Time to Relapse' using CD4, PD1 and IFNg levels.
+*Load in the data and neccessary packages*
+```{r, echo=FALSE}
+library("readxl")
+library("nnet")
+library("stargazer")
+library("ggplot2")
+library("pROC")
+
+
+#load in data
+setwd("/Volumes/Seagate Expansi/LEISHMANIASIS/Sanger data") # set working directory
+Scores <- read_excel("raw_values_leish.xlsx", sheet = "Score", skip = 1)
+
+#--------------------------------------------------------------------------------
+#data cleaning and preprocessing
+#relapse group
+relapse_group <- Scores[,6:8]
+relapse_tps <- Scores[,9] 
+#remove missing values
+relapse_group <- relapse_group[c(2:6,8:16, 18:21),]
+relapse_tps <- relapse_tps[c(2:6,8:16, 18:21),]
+#rename colnames 
+colnames(relapse_group) <- c("CD4", "IFNg", "PD1")
+colnames(relapse_tps) <- "Time to Relapse"
+#add column - Infection and time to relapse
+relapse_group$Infection <- as.factor("VLHIV")
+relapse_group$Relapse <- 1
+relapse_tps$`Time to Relapse` <- ifelse(relapse_tps$`Time to Relapse`=="12m", "Relapse at 6-12M", "Relapse at 3M")
+relapse_tps$`Time to Relapse` <- as.factor(relapse_tps$`Time to Relapse`)
+relapse_vlhiv <- cbind(relapse_group, relapse_tps)
+#remove mistyped values (due to being out of threshold of quantification)
+relapse_vlhiv <- relapse_vlhiv[-2,] 
+#--------------------------------------------------------------------------------
+#no relapse group
+no_relapse <- Scores[,1:3]
+no_relapse_tps <- Scores[, 4]
+no_relapse$`CD4 score...1` <- as.numeric(no_relapse$`CD4 score...1`)
+#remove missing values
+no_relapse <- no_relapse[c(4:6, 12, 14:27),]
+no_relapse_tps <- no_relapse_tps[c(4:6, 12, 14:27),]
+#rename colnames 
+colnames(no_relapse) <- c("CD4", "IFNg", "PD1")
+colnames(no_relapse_tps) <- as.factor("Time to Relapse")
+#add column - Infection and time to relapse
+no_relapse$Infection <- as.factor("VLHIV")
+no_relapse$Relapse <- 0
+no_relapse_tps$`Time to Relapse` <- ifelse(no_relapse_tps$`Time to Relapse`=="relapsedafter 6-12 months and before 3 years3 year", "Relapse at 12M+", "No Relapse in Study")
+no_relapse_tps$`Time to Relapse` <- as.factor(no_relapse_tps$`Time to Relapse`)
+norelapse_vlhiv <- cbind(no_relapse, no_relapse_tps)
+#remove extreme values (out of capability of quantification)
+norelapse_vlhiv <- norelapse_vlhiv[-7,] 
+
+
+
+
+#put them all together! 
+full <- rbind(relapse_vlhiv, norelapse_vlhiv)
+
+#prep data, we want three outcomes now for relapse
+full$multi <- full$`Time to Relapse`
+full$multi[full$multi == "Relapse at 12M+"] <- "No Relapse in Study"
+full$multi <- droplevels(full$multi)
+full$multi <- factor(full$multi, levels = c("No Relapse in Study", "Relapse at 6-12M", "Relapse at 3M"))
+
+multi <- full[,c(1:3, 7)]
+
+```
+
+#Build Model and evaluate coefficients
+
+```{r}
+multi_model <- multinom(multi ~ CD4 * IFNg * PD1, data = multi)
+
+
+summary(multi_model)
+stargazer(multi_model, type="text")
+
+```
+
+##predict class
+```{r}
+# predictions
+#class
+pred <- predict(multi_model, multi)
+
+#predicted probabilities?
+pp <- fitted(multi_model)
+
+#make a new dataframe with prediction probabilities. 
+prediction <- as.data.frame(cbind(pp, pp))
+
+prediction[,4] <- ifelse(prediction[,4]>=0.5, 1, 0)
+prediction[,5] <- ifelse(prediction[,5]>=0.5, 1, 0)
+prediction[,6] <- ifelse(prediction[,6]>=0.5, 1, 0)
+prediction$actual <- multi$multi
+colnames(prediction) <- c("Probability - No Relapse", "Probability - Relapse at 6-12M", "Probability - Relapse at 3M", "Predict - No Relapse", "Predict - Relapse at 6-12M", "Predict - Relapse at 3M", "Correct Classification")
+
+colours <- c("Relapse at 3M" = "#FF0000", "Relapse at 6-12M" = "#FF8000", "No Relapse in Study" = "#0000FF")
+
+#No relapse ins study
+ggplot(prediction, aes(x = `Correct Classification`, y = `Probability - No Relapse`)) + geom_boxplot( linetype = "dotted") +
+  geom_boxplot(aes(ymin=..lower.., ymax=..upper..), fill = colours) +
+  geom_jitter(shape=16, position=position_jitter(0.2)) +  theme_bw()
+```
+
+
+Probability of relapsing between 6-12m
+```{r}
+#6-12m
+ggplot(prediction, aes(x = `Correct Classification`, y = `Probability - Relapse at 6-12M`)) + geom_boxplot( linetype = "dotted") +
+
+  geom_boxplot(aes(ymin=..lower.., ymax=..upper..), fill = colours) +
+  geom_jitter(shape=16, position=position_jitter(0.2)) +  theme_bw()
+```
+
+
+Probability of relapsing at 3m
+```{r}
+#3m
+ggplot(prediction, aes(x = `Correct Classification`, y = `Probability - Relapse at 3M`)) + geom_boxplot( linetype = "dotted") +
+  geom_boxplot(aes(ymin=..lower.., ymax=..upper..), fill = colours) +
+  geom_jitter(shape=16, position=position_jitter(0.2)) +  theme_bw()
+```
+
+*Receiver Operating Curve (ROC) for results, and calculating Area Under ROC (AUROC)*
+```{r}
+prediction$Correct_3M <- ifelse(prediction$`Correct Classification`=='Relapse at 3M', 1,0)
+prediction$Correct_612m <- ifelse(prediction$'Correct Classification' == 'Relapse at 6-12M', 1, 0)
+prediction$Correct_Norelapse <- ifelse(prediction$'Correct Classification' == 'No Relapse in Study', 1, 0)
+
+#based on probability
+roc <- roc(response = prediction$Correct_3M, predictor = prediction$`Probability - Relapse at 3M`, 
+                plot=TRUE, legacy.axes=TRUE, col="#606060", lwd=4 , print.auc=TRUE, print.auc.x=20, 
+                ci=TRUE, ci.type="bars", 
+                smooth = TRUE,
+                percent = TRUE)
+plot.roc(response = prediction$Correct_612m, prediction$`Probability - Relapse at 6-12M`, 
+         col="#C0C0C0", lwd=4, print.auc=TRUE, print.auc.x=20, print.auc.y=45, 
+         smooth = TRUE, add = TRUE,
+         ci=TRUE, percent = TRUE)
+legend("bottomright", legend=c("Relapse at 3M", "Relapse at 6-12M"), col=c("#606060", "#C0C0C0"), lwd=4)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
